@@ -1,0 +1,217 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>ZIRTO – Open World</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;overflow:hidden;background:#8db6ce;font-family:Arial;color:white}
+canvas{display:block}
+#title{position:fixed;top:15px;left:18px;font-size:25px;font-weight:bold;letter-spacing:4px;text-shadow:0 2px 8px black}
+#info{position:fixed;top:52px;left:20px;font-size:12px;text-shadow:0 2px 5px black}
+#joy{position:fixed;bottom:25px;left:25px;width:125px;height:125px;border:2px solid #ffffff99;border-radius:50%;background:#ffffff22;touch-action:none}
+#stick{position:absolute;left:37px;top:37px;width:47px;height:47px;border-radius:50%;background:#ffffffbb}
+#buttons{position:fixed;bottom:30px;right:20px;display:flex;gap:10px}
+button{width:65px;height:65px;border-radius:50%;border:1px solid white;background:#142b40cc;color:white;font-weight:bold}
+</style>
+</head>
+<body>
+<div id="title">ZIRTO</div>
+<div id="info">3D OPEN WORLD · PROTOTYP</div>
+<div id="joy"><div id="stick"></div></div>
+<div id="buttons">
+<button id="sprint">SPRINT</button>
+<button id="jump">SPRUNG</button>
+</div>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x91b9d0);
+scene.fog=new THREE.Fog(0x91b9d0,60,220);
+
+const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,500);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true;
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x526044,2));
+const sun=new THREE.DirectionalLight(0xffedcc,3);
+sun.position.set(-30,60,30);
+sun.castShadow=true;
+scene.add(sun);
+
+const ground=new THREE.Mesh(
+new THREE.PlaneGeometry(500,500),
+new THREE.MeshStandardMaterial({color:0x527849})
+);
+ground.rotation.x=-Math.PI/2;
+ground.receiveShadow=true;
+scene.add(ground);
+
+const roadMat=new THREE.MeshStandardMaterial({color:0x343a40});
+function road(x,z,w,d){
+const r=new THREE.Mesh(new THREE.BoxGeometry(w,.08,d),roadMat);
+r.position.set(x,.05,z);scene.add(r);
+}
+road(0,0,18,500);
+road(0,0,500,18);
+
+const materials=[0x8797a2,0xb6a999,0x6d8290,0xc2bcae,0x7b8d82]
+.map(c=>new THREE.MeshStandardMaterial({color:c}));
+
+for(let x=-90;x<=90;x+=22){
+for(let z=-90;z<=90;z+=22){
+if(Math.abs(x)<17||Math.abs(z)<17)continue;
+const h=8+Math.random()*28;
+const b=new THREE.Mesh(
+new THREE.BoxGeometry(9,h,9),
+materials[Math.floor(Math.random()*materials.length)]
+);
+b.position.set(x,h/2,z);
+b.castShadow=true;
+scene.add(b);
+}
+}
+
+const trunkMat=new THREE.MeshStandardMaterial({color:0x59432f});
+const leafMat=new THREE.MeshStandardMaterial({color:0x315e3b});
+function tree(x,z){
+const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.2,.3,2.5,8),trunkMat);
+trunk.position.set(x,1.25,z);scene.add(trunk);
+const leaves=new THREE.Mesh(new THREE.SphereGeometry(1.6,10,8),leafMat);
+leaves.position.set(x,3,z);scene.add(leaves);
+}
+for(let i=0;i<130;i++){
+const x=(Math.random()-.5)*220;
+const z=(Math.random()-.5)*220;
+if(Math.abs(x)<13||Math.abs(z)<13)continue;
+tree(x,z);
+}
+
+const player=new THREE.Group();
+scene.add(player);
+
+const body=new THREE.Mesh(
+new THREE.CapsuleGeometry(.45,.8,5,10),
+new THREE.MeshStandardMaterial({color:0x263d59})
+);
+body.position.y=1.5;
+player.add(body);
+
+const head=new THREE.Mesh(
+new THREE.SphereGeometry(.3,16,12),
+new THREE.MeshStandardMaterial({color:0xc58d68})
+);
+head.position.y=2.35;
+player.add(head);
+
+for(const x of [-.22,.22]){
+const leg=new THREE.Mesh(
+new THREE.CapsuleGeometry(.16,.65,4,8),
+new THREE.MeshStandardMaterial({color:0x20252d})
+);
+leg.position.set(x,.55,0);
+player.add(leg);
+}
+
+player.position.set(0,0,8);
+
+const keys={};
+addEventListener('keydown',e=>keys[e.key.toLowerCase()]=true);
+addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+
+let joyX=0,joyY=0,sprinting=false;
+let jumpV=0,grounded=true,yaw=0;
+
+const joy=document.getElementById('joy');
+const stick=document.getElementById('stick');
+let active=false;
+
+function moveJoy(e){
+const r=joy.getBoundingClientRect();
+let dx=e.clientX-r.left-r.width/2;
+let dy=e.clientY-r.top-r.height/2;
+const len=Math.hypot(dx,dy);
+if(len>42){dx=dx/len*42;dy=dy/len*42}
+joyX=dx/42;joyY=dy/42;
+stick.style.transform=`translate(${dx}px,${dy}px)`;
+}
+joy.addEventListener('pointerdown',e=>{
+active=true;joy.setPointerCapture(e.pointerId);moveJoy(e);
+});
+joy.addEventListener('pointermove',e=>{if(active)moveJoy(e)});
+function stopJoy(){
+active=false;joyX=joyY=0;
+stick.style.transform='translate(0,0)';
+}
+joy.addEventListener('pointerup',stopJoy);
+joy.addEventListener('pointercancel',stopJoy);
+
+const sprint=document.getElementById('sprint');
+sprint.addEventListener('pointerdown',()=>sprinting=true);
+['pointerup','pointercancel','pointerleave'].forEach(e=>
+sprint.addEventListener(e,()=>sprinting=false)
+);
+
+document.getElementById('jump').addEventListener('pointerdown',()=>{
+if(grounded){jumpV=8;grounded=false}
+});
+
+const clock=new THREE.Clock();
+
+function animate(){
+requestAnimationFrame(animate);
+const dt=Math.min(clock.getDelta(),.04);
+
+let forward=(keys.w||keys.arrowup?1:0)
+-(keys.s||keys.arrowdown?1:0)-joyY;
+
+let side=(keys.d||keys.arrowright?1:0)
+-(keys.a||keys.arrowleft?1:0)+joyX;
+
+if(Math.hypot(forward,side)>.08){
+yaw=Math.atan2(side,forward);
+const speed=(sprinting||keys.shift?12:7)*dt;
+player.position.x+=Math.sin(yaw)*speed;
+player.position.z-=Math.cos(yaw)*speed;
+player.rotation.y=yaw;
+}
+
+jumpV-=22*dt;
+player.position.y+=jumpV*dt;
+if(player.position.y<=0){
+player.position.y=0;jumpV=0;grounded=true;
+}
+
+const target=new THREE.Vector3(
+player.position.x,
+player.position.y+2,
+player.position.z
+);
+const desired=new THREE.Vector3(
+player.position.x-Math.sin(yaw)*8,
+player.position.y+5,
+player.position.z+Math.cos(yaw)*8
+);
+
+camera.position.lerp(desired,1-Math.pow(.001,dt));
+camera.lookAt(target);
+renderer.render(scene,camera);
+}
+
+animate();
+
+addEventListener('resize',()=>{
+camera.aspect=innerWidth/innerHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
